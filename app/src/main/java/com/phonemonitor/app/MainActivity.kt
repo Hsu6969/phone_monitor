@@ -1,5 +1,6 @@
 package com.phonemonitor.app
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.PendingIntent
@@ -7,12 +8,15 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -62,6 +66,13 @@ class MainActivity : Activity(), FrameRenderer.Listener {
 
     @Volatile
     private var started = false
+
+    // CAMERA runtime permission state (UI thread writes, worker reads).
+    @Volatile
+    private var cameraPermissionRequesting = false
+
+    @Volatile
+    private var cameraPermissionDenied = false
 
     private val hideTopBar = Runnable { topBar.visibility = View.GONE }
 
@@ -129,7 +140,13 @@ class MainActivity : Activity(), FrameRenderer.Listener {
             updateScaleButton()
             scheduleHideTopBar()
         }
+        findViewById<Button>(R.id.btnSettings).setOnClickListener {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+            )
+        }
         findViewById<Button>(R.id.btnRetry).setOnClickListener {
+            cameraPermissionDenied = false
             worker.execute {
                 reconnectAttempts = 0
                 permissionPendingFor = null
@@ -193,6 +210,14 @@ class MainActivity : Activity(), FrameRenderer.Listener {
                 showMessage(getString(R.string.msg_ptp_title), getString(R.string.msg_ptp_body))
             } else {
                 showMessage(getString(R.string.msg_no_device_title), getString(R.string.msg_no_device_body))
+            }
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            if (cameraPermissionDenied) {
+                showCameraPermissionDenied()
+            } else {
+                requestCameraPermission()
             }
             return
         }
@@ -264,6 +289,49 @@ class MainActivity : Activity(), FrameRenderer.Listener {
         }
     }
 
+    // ---------------- CAMERA runtime permission ----------------
+
+    /**
+     * Android 9+ silently denies USB permission for video-class devices unless the
+     * app holds CAMERA, so it has to be granted before UsbManager.requestPermission.
+     */
+    private fun requestCameraPermission() {
+        runOnUiThread {
+            if (cameraPermissionRequesting) return@runOnUiThread
+            cameraPermissionRequesting = true
+            showMessage(getString(R.string.msg_camera_perm_title), getString(R.string.msg_camera_perm_body), showRetry = false)
+            requestPermissions(arrayOf(Manifest.permission.CAMERA), REQ_CAMERA)
+        }
+    }
+
+    private fun showCameraPermissionDenied() {
+        runOnUiThread {
+            val permanentlyDenied = !shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)
+            showMessage(
+                getString(R.string.msg_camera_perm_title),
+                getString(if (permanentlyDenied) R.string.msg_camera_perm_settings else R.string.msg_camera_perm_denied),
+                showSettings = permanentlyDenied,
+            )
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_CAMERA) return
+        cameraPermissionRequesting = false
+        val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            cameraPermissionDenied = false
+            worker.execute {
+                permissionPendingFor = null
+                if (started) connectIfPossible()
+            }
+        } else {
+            cameraPermissionDenied = true
+            showCameraPermissionDenied()
+        }
+    }
+
     // ---------------- FrameRenderer.Listener (render thread) ----------------
 
     override fun onFrameStats(session: StreamSession, displayFps: Double, width: Int, height: Int) {
@@ -308,8 +376,9 @@ class MainActivity : Activity(), FrameRenderer.Listener {
         }
     }
 
-    private fun showMessage(title: String, body: String, showRetry: Boolean = true) {
+    private fun showMessage(title: String, body: String, showRetry: Boolean = true, showSettings: Boolean = false) {
         runOnUiThread {
+            findViewById<View>(R.id.btnSettings).visibility = if (showSettings) View.VISIBLE else View.GONE
             messageTitle.text = title
             messageBody.text = body
             messageBody.visibility = if (body.isEmpty()) View.GONE else View.VISIBLE
@@ -365,5 +434,6 @@ class MainActivity : Activity(), FrameRenderer.Listener {
         private const val ACTION_USB_PERMISSION = "com.phonemonitor.app.USB_PERMISSION"
         private const val PREF_SCALE = "scale_mode"
         private const val MAX_RECONNECTS = 3
+        private const val REQ_CAMERA = 1
     }
 }

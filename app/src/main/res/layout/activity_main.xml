@@ -82,13 +82,27 @@
                 android:textColor="#DDFFFFFF"
                 android:textSize="14sp" />
 
-            <Button
-                android:id="@+id/btnRetry"
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="end"
                 android:layout_marginTop="12dp"
-                android:text="@string/btn_retry" />
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnSettings"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:text="@string/btn_settings"
+                    android:visibility="gone" />
+
+                <Button
+                    android:id="@+id/btnRetry"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_retry" />
+            </LinearLayout>
         </LinearLayout>
     </ScrollView>
 </FrameLayout>

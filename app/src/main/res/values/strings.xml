@@ -14,6 +14,15 @@
     <string name="msg_permission_title">需要 USB 權限</string>
     <string name="msg_permission_body">請在彈出視窗中允許「相機監看」存取這個 USB 裝置。</string>
     <string name="msg_permission_denied">USB 權限被拒絕，請重新插拔線材或按「重新偵測」。</string>
+    <string name="msg_camera_perm_title">需要「相機」權限</string>
+    <string name="msg_camera_perm_body">Android 規定：App 要讀取 USB 影像裝置（相機 / 擷取卡）必須先取得「相機」權限。
+
+本 App 不會使用手機本身的鏡頭，只用來接收外接相機的畫面。</string>
+    <string name="msg_camera_perm_denied">沒有「相機」權限就無法讀取 USB 影像裝置。請按「重新偵測」再允許一次。</string>
+    <string name="msg_camera_perm_settings">「相機」權限已被設為不再詢問。請按「開啟設定」→ 權限 → 相機 → 允許，再回到 App。
+
+（本 App 不會使用手機本身的鏡頭。）</string>
+    <string name="btn_settings">開啟設定</string>
     <string name="msg_connecting">連線中…</string>
     <string name="msg_error_title">無法開啟影像</string>
     <string name="msg_disconnected">裝置已中斷連線</string>
