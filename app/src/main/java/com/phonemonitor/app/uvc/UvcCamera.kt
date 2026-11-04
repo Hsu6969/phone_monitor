@@ -19,7 +19,9 @@ data class UvcMode(val format: UvcFormat, val frame: UvcFrame, val interval: Lon
     val height get() = frame.height
     val fps get() = if (interval > 0) 1e7 / interval else 0.0
     val key get() = "${format.pixelFormat.name}:${frame.width}x${frame.height}@$interval"
-    val label get() = "${frame.width}×${frame.height}  ${"%.0f".format(fps)}fps  ${format.pixelFormat.label}"
+    val fpsLabel: String
+        get() = if (kotlin.math.abs(fps - Math.round(fps)) < 0.05) "%.0f".format(fps) else "%.2f".format(fps)
+    val label get() = "${frame.width}×${frame.height}  ${fpsLabel}fps  ${format.pixelFormat.label}"
 }
 
 /**
@@ -39,14 +41,10 @@ class UvcCamera private constructor(
     val displayName: String
         get() = device.productName?.takeIf { it.isNotBlank() } ?: "USB 影像裝置"
 
-    /** All modes, one per frame size and format, at the fastest rate up to 60 fps. */
+    /** Every format × frame size × frame rate the device advertises. */
     val modes: List<UvcMode> by lazy {
         streamIf.formats.flatMap { fmt ->
-            fmt.frames.map { fr ->
-                val upTo60 = fr.intervals.filter { it >= MIN_INTERVAL_60FPS }
-                val interval = upTo60.minOrNull() ?: fr.intervals.maxOrNull() ?: fr.defaultInterval
-                UvcMode(fmt, fr, interval)
-            }
+            fmt.frames.flatMap { fr -> intervalsOf(fr).map { UvcMode(fmt, fr, it) } }
         }.sortedWith(
             compareBy<UvcMode> { it.format.pixelFormat != PixelFormat.MJPEG }
                 .thenByDescending { it.width * it.height }
@@ -58,9 +56,22 @@ class UvcCamera private constructor(
     fun defaultMode(): UvcMode {
         val mjpeg = modes.filter { it.format.pixelFormat == PixelFormat.MJPEG }
         val pool = mjpeg.ifEmpty { modes.filter { it.fps >= 24 }.ifEmpty { modes } }
-        return pool.firstOrNull { it.width == 1920 && it.height == 1080 }
+        val size = pool.firstOrNull { it.width == 1920 && it.height == 1080 }
             ?: pool.filter { it.width * it.height <= 1920 * 1080 }.maxByOrNull { it.width * it.height }
             ?: pool.first()
+        val sameSize = pool.filter { it.format == size.format && it.frame == size.frame }
+        // Fastest rate up to 60 fps, otherwise the slowest offered.
+        return sameSize.filter { it.fps <= 60.5 }.maxByOrNull { it.fps }
+            ?: sameSize.minByOrNull { it.fps }
+            ?: size
+    }
+
+    private fun intervalsOf(fr: UvcFrame): List<Long> {
+        if (!fr.continuous) return fr.intervals.ifEmpty { listOf(fr.defaultInterval) }
+        val min = fr.intervals.first()
+        val max = fr.intervals.last()
+        val common = COMMON_FPS.map { Math.round(1e7 / it) }.filter { it in min..max }
+        return (common + min + max).distinct().sorted()
     }
 
     fun start(mode: UvcMode): StreamSession {
@@ -193,7 +204,7 @@ class UvcCamera private constructor(
         private const val VS_PROBE_CONTROL = 0x01
         private const val VS_COMMIT_CONTROL = 0x02
         private const val CONTROL_TIMEOUT_MS = 1000
-        private const val MIN_INTERVAL_60FPS = 166_666L
+        private val COMMON_FPS = listOf(120.0, 60.0, 59.94, 50.0, 30.0, 29.97, 25.0, 24.0, 23.976, 20.0, 15.0, 10.0, 5.0)
 
         fun isVideoDevice(device: UsbDevice): Boolean = hasInterfaceClass(device, UsbConstants.USB_CLASS_VIDEO)
 

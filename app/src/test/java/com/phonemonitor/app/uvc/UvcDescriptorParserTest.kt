@@ -82,6 +82,8 @@ class UvcDescriptorParserTest {
         assertEquals(listOf(333_333L, 666_666L), mjpeg.frames[0].intervals)
         assertEquals(listOf(166_666L, 333_333L), mjpeg.frames[1].intervals)
         assertEquals(60.0, mjpeg.frames[1].maxFps, 0.01)
+        assertTrue(mjpeg.frames[1].continuous)
+        assertTrue(!mjpeg.frames[0].continuous)
 
         val yuy2 = vs.formats[1]
         assertEquals(2, yuy2.index)

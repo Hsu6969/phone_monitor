@@ -15,6 +15,8 @@ data class UvcFrame(
     val intervals: List<Long>,
     val defaultInterval: Long,
     val maxFrameBufferSize: Int,
+    /** True when the device accepts any interval between intervals.first() and intervals.last(). */
+    val continuous: Boolean = false,
 ) {
     val maxFps: Double get() = intervals.firstOrNull()?.let { 1e7 / it } ?: 0.0
 }
@@ -223,7 +225,7 @@ object UvcDescriptorParser {
         if (intervals.isEmpty() && defInterval > 0) intervals += defInterval
         val cleaned = intervals.filter { it > 0 }.distinct().sorted()
         if (width <= 0 || height <= 0) return null
-        return UvcFrame(index, width, height, cleaned, defInterval, maxBuf)
+        return UvcFrame(index, width, height, cleaned, defInterval, maxBuf, continuous = intervalType == 0 && cleaned.size >= 2)
     }
 
     private fun u8(b: ByteArray, i: Int) = b[i].toInt() and 0xFF
