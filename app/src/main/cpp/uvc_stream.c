@@ -486,11 +486,14 @@ Java_com_phonemonitor_app_uvc_NativeUvc_nativeStart(JNIEnv *env, jclass clazz, j
                                                     jint endpoint, jboolean is_iso,
                                                     jint packet_size, jint max_payload,
                                                     jint format, jint width, jint height,
-                                                    jint max_frame_size) {
-    (void) env;
+                                                    jint max_frame_size, jintArray err_out) {
     (void) clazz;
+    /* Note: the handle is a heap pointer. On arm64 Android it carries a tag in the
+     * top byte and is negative as a jlong, so errors are reported via err_out and
+     * a 0 return, never via the sign of the result. */
+#define FAIL(e) do { jint _e = (jint) (e); if (err_out) (*env)->SetIntArrayRegion(env, err_out, 0, 1, &_e); return 0; } while (0)
     stream_t *s = stream_alloc(format, width, height);
-    if (!s) return -ENOMEM;
+    if (!s) FAIL(ENOMEM);
     s->fd = fd;
     s->endpoint = endpoint;
     s->is_iso = is_iso ? 1 : 0;
@@ -498,7 +501,7 @@ Java_com_phonemonitor_app_uvc_NativeUvc_nativeStart(JNIEnv *env, jclass clazz, j
     if (s->is_iso) {
         if (packet_size <= 0) {
             stream_free(s);
-            return -EINVAL;
+            FAIL(EINVAL);
         }
         s->packet_size = packet_size;
         s->urb_buf_len = packet_size * ISO_PACKETS_PER_URB;
@@ -519,7 +522,7 @@ Java_com_phonemonitor_app_uvc_NativeUvc_nativeStart(JNIEnv *env, jclass clazz, j
     if (ensure_cap(&s->asm_buf, &s->asm_cap, initial) != 0 ||
         ensure_cap(&s->latest, &s->latest_cap, initial) != 0) {
         stream_free(s);
-        return -ENOMEM;
+        FAIL(ENOMEM);
     }
 
     size_t urb_size = sizeof(struct usbdevfs_urb) +
@@ -551,17 +554,18 @@ Java_com_phonemonitor_app_uvc_NativeUvc_nativeStart(JNIEnv *env, jclass clazz, j
     if (submitted == 0) {
         LOGE("no URB could be submitted (err %d)", last_err);
         stream_free(s);
-        return last_err ? last_err : -EIO;
+        FAIL(last_err ? -last_err : EIO);
     }
 
     s->running = 1;
     if (pthread_create(&s->thread, NULL, stream_thread, s) != 0) {
         cancel_all_urbs(s);
         stream_free(s);
-        return -EAGAIN;
+        FAIL(EAGAIN);
     }
     s->thread_started = 1;
     return (jlong) (intptr_t) s;
+#undef FAIL
 }
 
 JNIEXPORT jint JNICALL

@@ -6,7 +6,10 @@ internal object NativeUvc {
         System.loadLibrary("uvcstream")
     }
 
-    /** Returns a handle > 0, or a negative errno. */
+    /**
+     * Returns a non-zero handle, or 0 on failure with the errno in errOut[0].
+     * The handle may be negative (tagged heap pointer on arm64); only 0 means failure.
+     */
     @JvmStatic
     external fun nativeStart(
         fd: Int,
@@ -18,6 +21,7 @@ internal object NativeUvc {
         width: Int,
         height: Int,
         maxFrameSize: Int,
+        errOut: IntArray,
     ): Long
 
     /**

@@ -73,30 +73,31 @@ class UvcCamera private constructor(
 
         val isoAlts = streamIf.alts.filter { it.isIso && it.altSetting > 0 }.sortedBy { it.bytesPerInterval }
         val fd = connection.fileDescriptor
+        val err = IntArray(1)
         val handle: Long
         if (isoAlts.isNotEmpty()) {
             // Smallest alternate setting that can carry the negotiated payload, then larger ones.
             val firstFit = isoAlts.indexOfFirst { it.bytesPerInterval >= maxPayload }
                 .let { if (it < 0) isoAlts.size - 1 else it }
             val candidates = isoAlts.subList(firstFit, isoAlts.size)
-            var lastErr = 0L
+            var lastErr = 0
             var h = 0L
             for (alt in candidates) {
                 setAlt(alt.altSetting)
                 h = NativeUvc.nativeStart(
                     fd, alt.endpointAddress, true, alt.bytesPerInterval, maxPayload,
-                    mode.format.pixelFormat.nativeId, mode.width, mode.height, maxFrameSize,
+                    mode.format.pixelFormat.nativeId, mode.width, mode.height, maxFrameSize, err,
                 )
-                if (h > 0) {
+                if (h != 0L) {
                     Log.i(TAG, "streaming iso alt=${alt.altSetting} bpi=${alt.bytesPerInterval}")
                     break
                 }
-                lastErr = h
-                Log.w(TAG, "iso alt ${alt.altSetting} failed: errno ${-h}")
+                lastErr = err[0]
+                Log.w(TAG, "iso alt ${alt.altSetting} failed: errno $lastErr")
             }
-            if (h <= 0) {
+            if (h == 0L) {
                 setAlt(0)
-                throw UvcException("無法開始串流 (errno ${-lastErr})", (-lastErr).toInt())
+                throw UvcException("無法開始串流 (errno $lastErr)", lastErr)
             }
             handle = h
         } else {
@@ -104,9 +105,9 @@ class UvcCamera private constructor(
                 ?: throw UvcException("找不到影像傳輸端點")
             handle = NativeUvc.nativeStart(
                 fd, bulk.endpointAddress, false, 0, maxPayload,
-                mode.format.pixelFormat.nativeId, mode.width, mode.height, maxFrameSize,
+                mode.format.pixelFormat.nativeId, mode.width, mode.height, maxFrameSize, err,
             )
-            if (handle <= 0) throw UvcException("無法開始串流 (errno ${-handle})", (-handle).toInt())
+            if (handle == 0L) throw UvcException("無法開始串流 (errno ${err[0]})", err[0])
             Log.i(TAG, "streaming bulk ep=${bulk.endpointAddress}")
         }
         return StreamSession(handle, mode).also { session = it }
