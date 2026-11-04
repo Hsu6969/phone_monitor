@@ -5,6 +5,10 @@
     <string name="btn_scale_fit">完整顯示</string>
     <string name="btn_scale_fill">填滿畫面</string>
     <string name="btn_retry">重新偵測</string>
+    <string name="btn_info">資訊</string>
+    <string name="dialog_info_title">裝置資訊</string>
+    <string name="msg_flat_frame">相機目前沒有輸出影像\n（USB 串流模式下，相機顯示選單或回放時會暫停影像；若用 HDMI 擷取卡，請確認相機 HDMI 有輸出）</string>
+    <string name="msg_no_exposure_controls">（此裝置沒有提供曝光相關的 UVC 控制項，因此無法在手機上顯示快門 / 光圈 / ISO。改用 HDMI 擷取卡時，相機螢幕上的參數會直接出現在畫面中。）</string>
     <string name="dialog_resolution_title">選擇解析度</string>
 
     <string name="msg_no_device_title">請連接相機</string>

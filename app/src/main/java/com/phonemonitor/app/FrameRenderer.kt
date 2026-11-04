@@ -27,6 +27,12 @@ class FrameRenderer(private val holder: SurfaceHolder, private val listener: Lis
 
         /** The session's native stream stopped on its own (cable pulled, USB error...). */
         fun onStreamEnded(session: StreamSession)
+
+        /**
+         * The picture became (or stopped being) a single flat color, e.g. the camera
+         * replaces the video with a gray frame while its menu is open.
+         */
+        fun onFlatFrameChanged(flat: Boolean)
     }
 
     @Volatile
@@ -67,6 +73,8 @@ class FrameRenderer(private val holder: SurfaceHolder, private val listener: Lis
         var frameCount = 0
         var windowStart = SystemClock.elapsedRealtime()
         var clearedIdle = false
+        var flatCount = 0
+        var flatReported = false
 
         while (running) {
             val s = session
@@ -78,6 +86,11 @@ class FrameRenderer(private val holder: SurfaceHolder, private val listener: Lis
             clearedIdle = false
             if (s !== lastSession) {
                 lastSession = s
+                flatCount = 0
+                if (flatReported) {
+                    flatReported = false
+                    listener.onFlatFrameChanged(false)
+                }
                 frameCount = 0
                 windowStart = SystemClock.elapsedRealtime()
             }
@@ -107,6 +120,14 @@ class FrameRenderer(private val holder: SurfaceHolder, private val listener: Lis
             val bmp = decode(s, buf, n, bitmaps[which]) ?: continue
             bitmaps[which] = bmp
             draw(bmp)
+
+            // Debounced flat-frame detection (3 consecutive flat frames to enter, 1 normal to leave).
+            if (isFlat(bmp)) flatCount++ else flatCount = 0
+            val flat = flatCount >= 3
+            if (flat != flatReported) {
+                flatReported = flat
+                listener.onFlatFrameChanged(flat)
+            }
 
             frameCount++
             val now = SystemClock.elapsedRealtime()
@@ -138,6 +159,28 @@ class FrameRenderer(private val holder: SurfaceHolder, private val listener: Lis
             opts.inBitmap = null
             BitmapFactory.decodeByteArray(buf, 0, n, opts)
         }
+    }
+
+    /** Samples a 9x9 grid; flat when every channel varies by at most a few levels. */
+    private fun isFlat(bmp: Bitmap): Boolean {
+        var minR = 255; var minG = 255; var minB = 255
+        var maxR = 0; var maxG = 0; var maxB = 0
+        for (gy in 1..9) {
+            val y = bmp.height * gy / 10
+            for (gx in 1..9) {
+                val c = bmp.getPixel(bmp.width * gx / 10, y)
+                val r = (c shr 16) and 0xFF
+                val g = (c shr 8) and 0xFF
+                val b = c and 0xFF
+                if (r < minR) minR = r
+                if (r > maxR) maxR = r
+                if (g < minG) minG = g
+                if (g > maxG) maxG = g
+                if (b < minB) minB = b
+                if (b > maxB) maxB = b
+            }
+        }
+        return maxR - minR <= FLAT_TOLERANCE && maxG - minG <= FLAT_TOLERANCE && maxB - minB <= FLAT_TOLERANCE
     }
 
     private fun draw(bmp: Bitmap) {
@@ -192,5 +235,6 @@ class FrameRenderer(private val holder: SurfaceHolder, private val listener: Lis
 
     companion object {
         private const val TAG = "FrameRenderer"
+        private const val FLAT_TOLERANCE = 6
     }
 }

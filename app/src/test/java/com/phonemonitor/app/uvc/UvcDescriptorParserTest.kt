@@ -38,6 +38,10 @@ class UvcDescriptorParserTest {
         d.add(0x0B, 0, 2, 0x0E, 0x03, 0, 0) // IAD
         d.add(0x04, 0, 0, 1, 0x0E, 0x01, 0, 0) // VC interface 0
         d.add(0x24, 0x01, *le16(0x0110), *le16(0x30), *le32(48_000_000), 1, 1) // VC header, UVC 1.1
+        // Camera terminal (ID 1): exposure abs (bit 3), iris abs (bit 7), zoom abs (bit 9)
+        d.add(0x24, 0x02, 1, *le16(0x0201), 0, 0, *le16(0), *le16(0), *le16(0), 3, 0x88, 0x02, 0x00)
+        // Processing unit (ID 2): gain (bit 9)
+        d.add(0x24, 0x05, 2, 1, *le16(0), 2, 0x00, 0x02, 0)
         d.add(0x05, 0x83, 0x03, *le16(16), 8) // VC interrupt endpoint (ignored)
         d.add(0x04, 1, 0, 0, 0x0E, 0x02, 0, 0) // VS interface 1 alt 0
         d.add(0x24, 0x01, 2, *le16(0), 0x81, 0, 1, 0, 0, 0, 1, 0, 0) // VS input header
@@ -70,6 +74,10 @@ class UvcDescriptorParserTest {
         info!!
         assertEquals(0x0110, info.uvcVersion)
         assertEquals(0, info.controlInterface)
+        assertEquals(1, info.cameraTerminalId)
+        assertEquals((1L shl 3) or (1L shl 7) or (1L shl 9), info.cameraControls)
+        assertEquals(2, info.processingUnitId)
+        assertEquals(1L shl 9, info.processingControls)
         assertEquals(1, info.streams.size)
 
         val vs = info.streams[0]

@@ -47,6 +47,12 @@ data class UvcDeviceInfo(
     val uvcVersion: Int,
     val controlInterface: Int,
     val streams: List<UvcStreamingInterface>,
+    /** Camera Terminal entity ID and its bmControls bitmap (UVC 1.5 table 3-6), -1/0 if absent. */
+    val cameraTerminalId: Int = -1,
+    val cameraControls: Long = 0,
+    /** Processing Unit entity ID and its bmControls bitmap (UVC 1.5 table 3-8), -1/0 if absent. */
+    val processingUnitId: Int = -1,
+    val processingControls: Long = 0,
 )
 
 /**
@@ -65,6 +71,9 @@ object UvcDescriptorParser {
     private const val SC_VIDEOSTREAMING = 0x02
 
     private const val VC_HEADER = 0x01
+    private const val VC_INPUT_TERMINAL = 0x02
+    private const val VC_PROCESSING_UNIT = 0x05
+    private const val ITT_CAMERA = 0x0201
     private const val VS_FORMAT_UNCOMPRESSED = 0x04
     private const val VS_FRAME_UNCOMPRESSED = 0x05
     private const val VS_FORMAT_MJPEG = 0x06
@@ -84,6 +93,10 @@ object UvcDescriptorParser {
 
     fun parse(raw: ByteArray): UvcDeviceInfo? {
         var uvcVersion = 0x0100
+        var cameraTerminalId = -1
+        var cameraControls = 0L
+        var processingUnitId = -1
+        var processingControls = 0L
         var controlInterface = -1
         val streams = linkedMapOf<Int, StreamBuilder>()
 
@@ -125,6 +138,16 @@ object UvcDescriptorParser {
                     val subtype = u8(raw, i + 2)
                     if (curSubClass == SC_VIDEOCONTROL && subtype == VC_HEADER && len >= 5) {
                         uvcVersion = u16(raw, i + 3)
+                    } else if (curSubClass == SC_VIDEOCONTROL && subtype == VC_INPUT_TERMINAL && len >= 15 &&
+                        u16(raw, i + 4) == ITT_CAMERA && cameraTerminalId < 0
+                    ) {
+                        cameraTerminalId = u8(raw, i + 3)
+                        cameraControls = bitmap(raw, i + 15, minOf(u8(raw, i + 14), len - 15))
+                    } else if (curSubClass == SC_VIDEOCONTROL && subtype == VC_PROCESSING_UNIT && len >= 8 &&
+                        processingUnitId < 0
+                    ) {
+                        processingUnitId = u8(raw, i + 3)
+                        processingControls = bitmap(raw, i + 8, minOf(u8(raw, i + 7), len - 8))
                     } else if (curSubClass == SC_VIDEOSTREAMING) {
                         val stream = streams[curInterface]
                         when (subtype) {
@@ -199,7 +222,10 @@ object UvcDescriptorParser {
                 alts = sb.alts.toList(),
             )
         }
-        return UvcDeviceInfo(uvcVersion, controlInterface, result)
+        return UvcDeviceInfo(
+            uvcVersion, controlInterface, result,
+            cameraTerminalId, cameraControls, processingUnitId, processingControls,
+        )
     }
 
     private fun parseFrame(raw: ByteArray, i: Int, len: Int): UvcFrame? {
@@ -226,6 +252,12 @@ object UvcDescriptorParser {
         val cleaned = intervals.filter { it > 0 }.distinct().sorted()
         if (width <= 0 || height <= 0) return null
         return UvcFrame(index, width, height, cleaned, defInterval, maxBuf, continuous = intervalType == 0 && cleaned.size >= 2)
+    }
+
+    private fun bitmap(b: ByteArray, i: Int, size: Int): Long {
+        var v = 0L
+        for (k in 0 until minOf(size, 8)) v = v or (u8(b, i + k).toLong() shl (8 * k))
+        return v
     }
 
     private fun u8(b: ByteArray, i: Int) = b[i].toInt() and 0xFF

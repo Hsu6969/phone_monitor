@@ -29,6 +29,7 @@ import androidx.core.content.IntentCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.phonemonitor.app.uvc.ExposureInfo
 import com.phonemonitor.app.uvc.StreamSession
 import com.phonemonitor.app.uvc.UvcCamera
 import com.phonemonitor.app.uvc.UvcException
@@ -52,6 +53,8 @@ class MainActivity : Activity(), FrameRenderer.Listener {
     private lateinit var messagePanel: View
     private lateinit var messageTitle: TextView
     private lateinit var messageBody: TextView
+    private lateinit var exposureText: TextView
+    private lateinit var flatHint: TextView
     private lateinit var renderer: FrameRenderer
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -75,6 +78,31 @@ class MainActivity : Activity(), FrameRenderer.Listener {
     private var cameraPermissionDenied = false
 
     private val hideTopBar = Runnable { topBar.visibility = View.GONE }
+
+    /** Polls the camera's UVC exposure controls once a second while streaming. */
+    private val pollExposure: Runnable = object : Runnable {
+        override fun run() {
+            if (!started) return
+            worker.execute {
+                val cam = camera
+                val text = if (cam != null && session != null) {
+                    try {
+                        formatExposure(cam.readExposureInfo())
+                    } catch (e: Exception) {
+                        Log.w(TAG, "read exposure failed", e)
+                        null
+                    }
+                } else {
+                    null
+                }
+                runOnUiThread {
+                    exposureText.text = text ?: ""
+                    exposureText.visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
+                }
+            }
+            mainHandler.postDelayed(this, 1000)
+        }
+    }
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -127,6 +155,8 @@ class MainActivity : Activity(), FrameRenderer.Listener {
         messagePanel = findViewById(R.id.messagePanel)
         messageTitle = findViewById(R.id.messageTitle)
         messageBody = findViewById(R.id.messageBody)
+        exposureText = findViewById(R.id.exposureText)
+        flatHint = findViewById(R.id.flatHint)
 
         renderer = FrameRenderer(surfaceView.holder, this)
         renderer.scaleMode = runCatching { ScaleMode.valueOf(prefs.getString(PREF_SCALE, null) ?: "") }
@@ -141,6 +171,7 @@ class MainActivity : Activity(), FrameRenderer.Listener {
         surfaceView.setOnClickListener { toggleTopBar() }
 
         findViewById<Button>(R.id.btnResolution).setOnClickListener { showResolutionDialog() }
+        findViewById<Button>(R.id.btnInfo).setOnClickListener { showInfoDialog() }
         btnScale.setOnClickListener {
             renderer.scaleMode = if (renderer.scaleMode == ScaleMode.FIT) ScaleMode.FILL else ScaleMode.FIT
             prefs.edit().putString(PREF_SCALE, renderer.scaleMode.name).apply()
@@ -181,6 +212,8 @@ class MainActivity : Activity(), FrameRenderer.Listener {
     override fun onStart() {
         super.onStart()
         started = true
+        mainHandler.removeCallbacks(pollExposure)
+        mainHandler.postDelayed(pollExposure, 1000)
         worker.execute {
             reconnectAttempts = 0
             connectIfPossible()
@@ -189,6 +222,7 @@ class MainActivity : Activity(), FrameRenderer.Listener {
 
     override fun onStop() {
         started = false
+        mainHandler.removeCallbacks(pollExposure)
         // Release the USB device while in the background.
         worker.execute { closeCamera() }
         super.onStop()
@@ -293,6 +327,10 @@ class MainActivity : Activity(), FrameRenderer.Listener {
     private fun closeCamera() {
         renderer.session = null
         session = null
+        runOnUiThread {
+            exposureText.visibility = View.GONE
+            flatHint.visibility = View.GONE
+        }
         camera?.let {
             camera = null
             try {
@@ -360,6 +398,12 @@ class MainActivity : Activity(), FrameRenderer.Listener {
         runOnUiThread { statusText.text = text }
     }
 
+    override fun onFlatFrameChanged(flat: Boolean) {
+        runOnUiThread {
+            flatHint.visibility = if (flat && messagePanel.visibility != View.VISIBLE) View.VISIBLE else View.GONE
+        }
+    }
+
     override fun onStreamEnded(session: StreamSession) {
         worker.execute {
             if (this.session !== session) return@execute
@@ -378,6 +422,45 @@ class MainActivity : Activity(), FrameRenderer.Listener {
     }
 
     // ---------------- UI ----------------
+
+    private fun showInfoDialog() {
+        worker.execute {
+            val cam = camera ?: return@execute
+            val exposure = try {
+                cam.readExposureInfo()
+            } catch (e: Exception) {
+                null
+            }
+            val text = buildString {
+                append(cam.describe())
+                if (exposure == null || exposure.isEmpty) {
+                    append("\n\n")
+                    append(getString(R.string.msg_no_exposure_controls))
+                }
+            }
+            runOnUiThread {
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.dialog_info_title)
+                    .setMessage(text)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
+        }
+    }
+
+    private fun formatExposure(e: ExposureInfo): String? {
+        if (e.isEmpty) return null
+        val parts = mutableListOf<String>()
+        e.exposureSeconds?.let { s ->
+            parts += if (s < 0.95) "1/${Math.round(1 / s)}" else "%.1f\"".format(s).replace(".0\"", "\"")
+        }
+        e.fNumber?.let { parts += "f/%.1f".format(it).replace(".0", "") }
+        e.gain?.let { parts += "增益 $it" }
+        e.zoom?.let { z ->
+            parts += if (e.zoomMin != null && e.zoomMax != null) "變焦 $z（${e.zoomMin}–${e.zoomMax}）" else "變焦 $z"
+        }
+        return parts.joinToString("   ")
+    }
 
     private fun showResolutionDialog() {
         worker.execute {
@@ -398,6 +481,7 @@ class MainActivity : Activity(), FrameRenderer.Listener {
 
     private fun showMessage(title: String, body: String, showRetry: Boolean = true, showSettings: Boolean = false) {
         runOnUiThread {
+            flatHint.visibility = View.GONE
             findViewById<View>(R.id.btnSettings).visibility = if (showSettings) View.VISIBLE else View.GONE
             messageTitle.text = title
             messageBody.text = body

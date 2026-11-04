@@ -10,6 +10,37 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Exposure info read from UVC controls (shown only when the device provides any). -->
+    <TextView
+        android:id="@+id/exposureText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="12dp"
+        android:background="@drawable/overlay_bg"
+        android:paddingStart="12dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="6dp"
+        android:textColor="#FFFFFFFF"
+        android:textSize="15sp"
+        android:visibility="gone" />
+
+    <!-- Shown when the picture is a flat color (camera menu open / no signal). -->
+    <TextView
+        android:id="@+id/flatHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_margin="32dp"
+        android:background="@drawable/overlay_bg"
+        android:gravity="center"
+        android:padding="16dp"
+        android:text="@string/msg_flat_frame"
+        android:textColor="#FFFFFFFF"
+        android:textSize="15sp"
+        android:visibility="gone" />
+
     <!-- Top bar: status + controls. Tap the picture to show/hide. -->
     <LinearLayout
         android:id="@+id/topBar"
@@ -32,6 +63,14 @@
             android:maxLines="2"
             android:textColor="#FFFFFFFF"
             android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btnInfo"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_info"
+            android:textColor="#FFFFFFFF" />
 
         <Button
             android:id="@+id/btnResolution"

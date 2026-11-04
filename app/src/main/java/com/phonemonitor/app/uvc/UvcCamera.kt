@@ -24,6 +24,22 @@ data class UvcMode(val format: UvcFormat, val frame: UvcFrame, val interval: Lon
     val label get() = "${frame.width}×${frame.height}  ${fpsLabel}fps  ${format.pixelFormat.label}"
 }
 
+/** Exposure-related values read from standard UVC controls; null = not offered by the device. */
+data class ExposureInfo(
+    /** Exposure time in seconds. */
+    val exposureSeconds: Double?,
+    /** f-number, e.g. 2.8. */
+    val fNumber: Double?,
+    /** Gain (unitless, device specific; UVC has no ISO control). */
+    val gain: Int?,
+    /** Absolute zoom in device-specific units, with its range. */
+    val zoom: Int?,
+    val zoomMin: Int?,
+    val zoomMax: Int?,
+) {
+    val isEmpty get() = exposureSeconds == null && fNumber == null && gain == null && zoom == null
+}
+
 /**
  * An opened UVC device. Open with [UvcCamera.open], then call [start] to get a
  * [StreamSession]. Not thread-safe: use it from one worker thread.
@@ -73,6 +89,73 @@ class UvcCamera private constructor(
         val common = COMMON_FPS.map { Math.round(1e7 / it) }.filter { it in min..max }
         return (common + min + max).distinct().sorted()
     }
+
+    // ---- camera / processing-unit controls (exposure info) ----
+
+    private val deadControls = mutableSetOf<Int>()
+    private var zoomRange: Pair<Int?, Int?>? = null
+
+    /**
+     * Reads the standard UVC exposure-time, iris, zoom and gain controls the device
+     * advertises. Controls that fail once are not polled again.
+     */
+    fun readExposureInfo(): ExposureInfo {
+        val ct = info.cameraTerminalId
+        val pu = info.processingUnitId
+        fun hasCt(bit: Int) = ct >= 0 && (info.cameraControls shr bit) and 1L == 1L
+        fun hasPu(bit: Int) = pu >= 0 && (info.processingControls shr bit) and 1L == 1L
+
+        val exposure = if (hasCt(3)) getControl(ct, CT_EXPOSURE_TIME_ABSOLUTE, 4, signed = false)?.let { it * 0.0001 } else null
+        val iris = if (hasCt(7)) getControl(ct, CT_IRIS_ABSOLUTE, 2, signed = false)?.let { it / 100.0 } else null
+        val zoom = if (hasCt(9)) getControl(ct, CT_ZOOM_ABSOLUTE, 2, signed = false)?.toInt() else null
+        if (zoom != null && zoomRange == null) {
+            zoomRange = getControl(ct, CT_ZOOM_ABSOLUTE, 2, false, GET_MIN)?.toInt() to
+                getControl(ct, CT_ZOOM_ABSOLUTE, 2, false, GET_MAX)?.toInt()
+        }
+        val gain = if (hasPu(9)) getControl(pu, PU_GAIN, 2, signed = false)?.toInt() else null
+        return ExposureInfo(
+            exposure?.takeIf { it > 0 }, iris?.takeIf { it > 0 }, gain, zoom,
+            zoomRange?.first, zoomRange?.second,
+        )
+    }
+
+    private fun getControl(entity: Int, selector: Int, size: Int, signed: Boolean, request: Int = GET_CUR): Long? {
+        val key = (entity shl 16) or (selector shl 8) or request
+        if (key in deadControls) return null
+        val buf = ByteArray(size)
+        val n = connection.controlTransfer(
+            REQ_TYPE_GET, request, selector shl 8, (entity shl 8) or info.controlInterface, buf, size, 200,
+        )
+        if (n < size) {
+            deadControls += key
+            return null
+        }
+        var v = 0L
+        for (k in 0 until size) v = v or ((buf[k].toLong() and 0xFF) shl (8 * k))
+        if (signed && size < 8 && (v shr (8 * size - 1)) and 1L == 1L) v -= 1L shl (8 * size)
+        return v
+    }
+
+    /** Human-readable summary for the "device info" dialog. */
+    fun describe(): String = buildString {
+        appendLine("$displayName")
+        appendLine("VID:PID  %04X:%04X".format(device.vendorId, device.productId))
+        appendLine("UVC  %x.%02x".format(info.uvcVersion shr 8, info.uvcVersion and 0xFF))
+        appendLine()
+        appendLine("影像模式：")
+        modes.forEach { appendLine("  ${it.label}") }
+        appendLine()
+        appendLine("相機控制項 (Camera Terminal)：")
+        appendLine("  " + bitNames(info.cameraControls, CT_NAMES).ifEmpty { "無" })
+        appendLine("影像處理控制項 (Processing Unit)：")
+        appendLine("  " + bitNames(info.processingControls, PU_NAMES).ifEmpty { "無" })
+        appendLine()
+        val alts = streamIf.alts.joinToString { "${it.altSetting}:${it.bytesPerInterval}${if (it.isIso) "" else "(bulk)"}" }
+        append("傳輸端點：$alts")
+    }
+
+    private fun bitNames(bits: Long, names: Map<Int, String>): String =
+        (0 until 64).filter { (bits shr it) and 1L == 1L }.joinToString("、") { names[it] ?: "bit$it" }
 
     fun start(mode: UvcMode): StreamSession {
         stop()
@@ -199,6 +282,22 @@ class UvcCamera private constructor(
         private const val TAG = "UvcCamera"
         private const val SET_CUR = 0x01
         private const val GET_CUR = 0x81
+        private const val GET_MIN = 0x82
+        private const val GET_MAX = 0x83
+        private const val CT_EXPOSURE_TIME_ABSOLUTE = 0x04
+        private const val CT_IRIS_ABSOLUTE = 0x09
+        private const val CT_ZOOM_ABSOLUTE = 0x0B
+        private const val PU_GAIN = 0x04
+        private val CT_NAMES = mapOf(
+            0 to "掃描模式", 1 to "自動曝光模式", 2 to "自動曝光優先", 3 to "曝光時間", 4 to "曝光時間(相對)",
+            5 to "對焦", 6 to "對焦(相對)", 7 to "光圈", 8 to "光圈(相對)", 9 to "變焦", 10 to "變焦(相對)",
+            11 to "雲台", 12 to "雲台(相對)", 13 to "旋轉", 14 to "旋轉(相對)", 17 to "自動對焦", 18 to "隱私",
+        )
+        private val PU_NAMES = mapOf(
+            0 to "亮度", 1 to "對比", 2 to "色相", 3 to "飽和度", 4 to "銳利度", 5 to "Gamma", 6 to "白平衡色溫",
+            7 to "白平衡分量", 8 to "背光補償", 9 to "增益", 10 to "電源頻率", 11 to "自動色相", 12 to "自動白平衡色溫",
+            13 to "自動白平衡分量", 14 to "數位倍率", 15 to "數位倍率上限",
+        )
         private const val REQ_TYPE_SET = 0x21 // host-to-device | class | interface
         private const val REQ_TYPE_GET = 0xA1 // device-to-host | class | interface
         private const val VS_PROBE_CONTROL = 0x01
