@@ -8,6 +8,13 @@
     <!-- Android 9+ only grants USB access to UVC (video class) devices to apps holding CAMERA.
          The phone's own cameras are never used. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Cameras in webcam mode also expose a USB microphone. Without RECORD_AUDIO Android hides the
+         "always open this app for this device" checkbox, so the USB dialog would appear on every connect.
+         The app does not record audio. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />

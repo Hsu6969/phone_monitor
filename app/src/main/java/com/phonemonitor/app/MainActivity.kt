@@ -91,9 +91,16 @@ class MainActivity : Activity(), FrameRenderer.Listener {
                         }
                     }
                 }
-                UsbManager.ACTION_USB_DEVICE_ATTACHED -> worker.execute {
-                    reconnectAttempts = 0
-                    if (started) connectIfPossible()
+                UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                    // The system's own "open with" dialog grants permission (and can be set to
+                    // "always"), so don't stack a second permission dialog on top of it; just
+                    // connect if access is already there.
+                    mainHandler.postDelayed({
+                        if (started) worker.execute {
+                            reconnectAttempts = 0
+                            connectIfPossible(requestUsbPermission = false)
+                        }
+                    }, 800)
                 }
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> worker.execute {
                     if (device != null && camera?.device?.deviceName == device.deviceName) {
@@ -201,7 +208,7 @@ class MainActivity : Activity(), FrameRenderer.Listener {
 
     // ---------------- worker thread ----------------
 
-    private fun connectIfPossible() {
+    private fun connectIfPossible(requestUsbPermission: Boolean = true) {
         if (camera != null) return
         val devices = usbManager.deviceList.values
         val video = devices.firstOrNull { UvcCamera.isVideoDevice(it) }
@@ -213,12 +220,19 @@ class MainActivity : Activity(), FrameRenderer.Listener {
             }
             return
         }
-        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            if (cameraPermissionDenied) {
-                showCameraPermissionDenied()
-            } else {
-                requestCameraPermission()
-            }
+        val needCamera = checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+        val needAudio = checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED &&
+            !prefs.getBoolean(PREF_AUDIO_ASKED, false)
+        if (needCamera && cameraPermissionDenied) {
+            showCameraPermissionDenied()
+            return
+        }
+        if (needCamera || needAudio) {
+            requestRuntimePermissions(needCamera, needAudio)
+            return
+        }
+        if (!usbManager.hasPermission(video) && !requestUsbPermission) {
+            showMessage(getString(R.string.msg_usb_confirm_title), getString(R.string.msg_usb_confirm_body))
             return
         }
         if (!usbManager.hasPermission(video)) {
@@ -295,12 +309,18 @@ class MainActivity : Activity(), FrameRenderer.Listener {
      * Android 9+ silently denies USB permission for video-class devices unless the
      * app holds CAMERA, so it has to be granted before UsbManager.requestPermission.
      */
-    private fun requestCameraPermission() {
+    private fun requestRuntimePermissions(camera: Boolean, audio: Boolean) {
         runOnUiThread {
             if (cameraPermissionRequesting) return@runOnUiThread
             cameraPermissionRequesting = true
+            val perms = buildList {
+                if (camera) add(Manifest.permission.CAMERA)
+                if (audio) add(Manifest.permission.RECORD_AUDIO)
+            }
+            // The microphone is optional: ask for it only once.
+            if (audio) prefs.edit().putBoolean(PREF_AUDIO_ASKED, true).apply()
             showMessage(getString(R.string.msg_camera_perm_title), getString(R.string.msg_camera_perm_body), showRetry = false)
-            requestPermissions(arrayOf(Manifest.permission.CAMERA), REQ_CAMERA)
+            requestPermissions(perms.toTypedArray(), REQ_CAMERA)
         }
     }
 
@@ -319,7 +339,7 @@ class MainActivity : Activity(), FrameRenderer.Listener {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQ_CAMERA) return
         cameraPermissionRequesting = false
-        val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+        val granted = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         if (granted) {
             cameraPermissionDenied = false
             worker.execute {
@@ -435,5 +455,6 @@ class MainActivity : Activity(), FrameRenderer.Listener {
         private const val PREF_SCALE = "scale_mode"
         private const val MAX_RECONNECTS = 3
         private const val REQ_CAMERA = 1
+        private const val PREF_AUDIO_ASKED = "record_audio_asked"
     }
 }
