@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">相機監看</string>
+    <string name="btn_resolution">解析度</string>
+    <string name="btn_scale_fit">完整顯示</string>
+    <string name="btn_scale_fill">填滿畫面</string>
+    <string name="btn_retry">重新偵測</string>
+    <string name="dialog_resolution_title">選擇解析度</string>
+
+    <string name="msg_no_device_title">請連接相機</string>
+    <string name="msg_no_device_body">用 USB-C 線把手機連到「UVC 影像裝置」後會自動顯示畫面。\n\n• 想看到相機的完整螢幕（拍攝、回放、選單）：\n  相機 HDMI 輸出 → HDMI 擷取卡（UVC）→ 手機 USB-C\n\n• 只需要即時取景畫面：\n  把相機的 USB 連線模式設成「網路攝影機 / UVC / USB 串流」，再用 USB-C 線直接連手機</string>
+    <string name="msg_ptp_title">偵測到相機，但它是「傳輸照片 (PTP/MTP)」模式</string>
+    <string name="msg_ptp_body">PTP/MTP 模式不會輸出影像畫面。\n\n• 若要同步相機的選單、回放與拍攝畫面：請使用相機的 HDMI 輸出接 HDMI 擷取卡，再接到手機。\n\n• 若只需要即時取景：到相機選單把 USB 連線模式改為「網路攝影機 / UVC / USB 串流」後重新插拔。</string>
+    <string name="msg_permission_title">需要 USB 權限</string>
+    <string name="msg_permission_body">請在彈出視窗中允許「相機監看」存取這個 USB 裝置。</string>
+    <string name="msg_permission_denied">USB 權限被拒絕，請重新插拔線材或按「重新偵測」。</string>
+    <string name="msg_connecting">連線中…</string>
+    <string name="msg_error_title">無法開啟影像</string>
+    <string name="msg_disconnected">裝置已中斷連線</string>
+    <string name="msg_stream_ended">影像串流中斷，正在重新連線…</string>
+    <string name="msg_no_signal_hint">若畫面一直全黑：確認相機已開機、HDMI 輸出已開啟，或試試較低的解析度。</string>
+</resources>

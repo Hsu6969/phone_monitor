@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- USB Video Class (14): cameras in UVC/webcam mode and HDMI-to-USB capture cards. -->
+    <usb-device class="14" />
+</resources>
