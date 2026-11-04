@@ -5,6 +5,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,10 +25,26 @@ jobs:
         run: ./gradlew --no-daemon testDebugUnitTest
 
       - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug
+        run: |
+          ./gradlew --no-daemon assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk phone-monitor-debug.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: phone-monitor-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: phone-monitor-debug.apk
           if-no-files-found: error
+
+      # Publish the APK at a fixed URL that can be opened directly on a phone:
+      # https://github.com/<owner>/<repo>/releases/download/debug-latest/phone-monitor-debug.apk
+      - name: Publish to "debug-latest" release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete debug-latest --yes --cleanup-tag || true
+          gh release create debug-latest phone-monitor-debug.apk \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "最新測試版 (debug)" \
+            --notes "分支 ${GITHUB_REF_NAME}，commit ${GITHUB_SHA::7}。在手機上點 phone-monitor-debug.apk 下載安裝。"
