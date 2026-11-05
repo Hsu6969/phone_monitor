@@ -53,6 +53,17 @@ App 會自動判斷：
   ```
   APK 在 `app/build/outputs/apk/debug/`
 
+## iPad 版（`ios/PhoneMonitor.swiftpm`）
+
+- 只支援 **USB-C 接口的 iPad**，iPadOS 17 以上（iPhone 系統不支援外接 USB 影像裝置）
+- 用 iPadOS 內建的外接相機支援（AVFoundation），不需要任何 USB 底層程式
+- 是 Swift Playgrounds 專案：**不需要 Mac、不需要付費開發者帳號**
+- 安裝：
+  1. App Store 安裝免費的「Swift Playgrounds」
+  2. 在 iPad Safari 打開 https://github.com/Hsu6969/phone_monitor/releases/download/ipad-latest/PhoneMonitor.swiftpm.zip
+  3. 「檔案」App →「下載項目」→ 點 zip 解壓縮 → 點 `PhoneMonitor.swiftpm`（會用 Swift Playgrounds 開啟）
+  4. 按「執行」(▶)，允許相機權限；之後插上相機 / 擷取卡就會自動顯示
+
 ## 之後的功能（待定）
 
 例如：截圖 / 錄影、峰值對焦 (focus peaking)、斑馬紋、輔助線、放大檢視、畫面翻轉、LUT 預覽、透過 PTP 遙控拍攝等。
