@@ -1,0 +1,50 @@
+name: iPad build
+
+on:
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode
+        run: xcodebuild -version
+
+      # Compile-check the Swift Playgrounds app package for iPadOS (simulator, unsigned).
+      - name: Build
+        working-directory: ios/PhoneMonitor.swiftpm
+        run: |
+          xcodebuild -list
+          xcodebuild build \
+            -scheme PhoneMonitor \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO
+
+      # The iPad installs nothing from here: it opens the .swiftpm folder in Swift Playgrounds.
+      - name: Package for Swift Playgrounds
+        run: |
+          cd ios
+          rm -rf PhoneMonitor.swiftpm/.build PhoneMonitor.swiftpm/.swiftpm
+          zip -r ../PhoneMonitor.swiftpm.zip PhoneMonitor.swiftpm -x '*.DS_Store'
+
+      - name: Publish to "ipad-latest" release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ipad-latest --yes --cleanup-tag || true
+          gh release create ipad-latest PhoneMonitor.swiftpm.zip \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "iPad 版 (Swift Playgrounds)" \
+            --notes "在 iPad 上點 PhoneMonitor.swiftpm.zip 下載，於「檔案」App 解壓縮後，點 PhoneMonitor.swiftpm 用 Swift Playgrounds 開啟並執行。"
